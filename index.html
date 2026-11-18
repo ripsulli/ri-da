@@ -41,7 +41,7 @@ main{display:flex;flex-direction:column;align-items:center;justify-content:cente
 #reader{position:fixed;inset:0;background:var(--deep);display:none;z-index:10}
 body.reading #reader{display:block}
 body.reading #home{display:none}
-#scroller{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+#scroller{position:absolute;inset:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;touch-action:manipulation;-webkit-overflow-scrolling:touch}
 #stage{min-height:100%;display:flex;flex-direction:column;justify-content:center}
 body.scrollmode #stage{justify-content:flex-start}
 .pg{width:100%;position:relative}
@@ -64,7 +64,9 @@ body.nochrome #bottom{transform:translateY(100%)}
 #slider{flex:1;min-width:0;accent-color:var(--accent)}
 #count{min-width:5.5ch;text-align:center;font-variant-numeric:tabular-nums}
 @media (max-width:520px){.bar{gap:.35rem;padding-left:.5rem;padding-right:.5rem}.bar button{padding:.35rem .5rem;font-size:.9rem}#top #title{display:none}#top{justify-content:space-between}}
-@media (prefers-reduced-motion:reduce){.bar{transition:none}}
+#toast{position:fixed;left:50%;bottom:calc(1.2rem + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:13;background:rgba(74,6,38,.94);border:1px solid var(--dim);padding:.5rem 1rem;opacity:0;pointer-events:none;transition:opacity .25s;max-width:90vw;text-align:center}
+#toast.on{opacity:1}
+@media (prefers-reduced-motion:reduce){.bar,#toast{transition:none}}
 </style>
 </head>
 <body>
@@ -93,8 +95,10 @@ body.nochrome #bottom{transform:translateY(100%)}
     <span id="title"></span>
     <button id="dir" title="Reading direction">L→R</button>
     <button id="mode" title="Switch between page and scroll reading">Scroll</button>
+    <button id="hide" title="Hide controls (H)">Hide UI</button>
     <button id="fs" title="Full screen (F)">Full screen</button>
   </div>
+  <div id="toast" role="status"></div>
   <div class="bar" id="bottom">
     <button id="prev" class="icon" aria-label="Previous page">‹</button>
     <input id="slider" type="range" min="1" max="1" value="1" aria-label="Page">
@@ -294,24 +298,37 @@ sc.addEventListener('click',e=>{
   const x=e.clientX/innerWidth;
   if(mode==='page'&&x<.28)step(-1);
   else if(mode==='page'&&x>.72)step(1);
-  else document.body.classList.toggle('nochrome');
 });
-const fsEl=document.documentElement,fsOK=document.fullscreenEnabled||document.webkitFullscreenEnabled;
+sc.addEventListener('dblclick',e=>{
+  if(e.target.closest('a'))return;
+  const x=e.clientX/innerWidth;
+  if(mode==='page'&&(x<.28||x>.72))return;
+  getSelection().removeAllRanges();
+  document.body.classList.toggle('nochrome');
+});
+const fsEl=document.documentElement;
+const FSMSG='Full screen is blocked in this view. Open the page in its own browser tab to use it.';
 function toggleFS(){
-  if(!fsOK)return;
+  const on=document.fullscreenElement||document.webkitFullscreenElement;
+  const rq=fsEl.requestFullscreen||fsEl.webkitRequestFullscreen,ex=document.exitFullscreen||document.webkitExitFullscreen;
   try{
-    if(document.fullscreenElement||document.webkitFullscreenElement)(document.exitFullscreen||document.webkitExitFullscreen).call(document);
-    else (fsEl.requestFullscreen||fsEl.webkitRequestFullscreen).call(fsEl);
-  }catch(e){}
+    if(on){if(ex)ex.call(document);return}
+    if(!rq)return toast(FSMSG);
+    const r=rq.call(fsEl);
+    if(r&&r.catch)r.catch(()=>toast(FSMSG));
+  }catch(e){toast(FSMSG)}
 }
-if(!fsOK)$('#fs').hidden=true;
 $('#fs').onclick=toggleFS;
-document.addEventListener('fullscreenchange',()=>{$('#fs').textContent=document.fullscreenElement?'Exit full screen':'Full screen'});
+let tt;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2800)}
+function hideUI(){document.body.classList.add('nochrome');toast('Double-tap the middle of the screen or press H to show controls')}
+$('#hide').onclick=hideUI;
+['fullscreenchange','webkitfullscreenchange'].forEach(t=>document.addEventListener(t,()=>{$('#fs').textContent=(document.fullscreenElement||document.webkitFullscreenElement)?'Exit full screen':'Full screen'}));
 addEventListener('keydown',e=>{
   if(!document.body.classList.contains('reading')||e.target.matches('input[type=range]')&&/Arrow/.test(e.key))return;
   if(e.key==='ArrowRight')step(1);
   else if(e.key==='ArrowLeft')step(-1);
   else if(e.key==='f'||e.key==='F')toggleFS();
+  else if(e.key==='h'||e.key==='H'){if(document.body.classList.contains('nochrome'))document.body.classList.remove('nochrome');else hideUI()}
   else if(e.key==='Escape'&&!document.fullscreenElement)$('#close').click();
   else if(mode==='page'&&(e.key===' '||e.key==='PageDown')&&sc.scrollTop+sc.clientHeight>=sc.scrollHeight-4){e.preventDefault();step(1)}
 });
